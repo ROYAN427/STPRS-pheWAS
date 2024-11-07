@@ -20,4 +20,153 @@ for(i in tissue){
     write.table(esteff, file = paste0(OUTPUT_PATH,i,"/", ensg_prefix,".txt"),col.names = F,row.names = F, sep = "\t", quote = F)
   }  
 }
+##calculat gene expression
+plink <- "/public/home/biostat01/biosoft/plink/plink"
+inputpath <- "/public/home/biostat01/project/cxh/PTRS/WEIGHT/"
+bfile <- "/public/home/biostat01/project/cxh/PRS/03_ukb_data/EUR/merge"
+setwd(outputpath)
+gene <- dir(inputpath)
+for(i in tissue){
+for (g in gene) {
+  outputpath <- paste0("/public/home/biostat01/project/cxh/PTRS/expression/validation/",i,"/")
+  fullpath <- paste0(inputpath,tissue,g)
+  outname <- tools::file_path_sans_ext(g)
+  system(paste0(plink, ' --bfile ',bfile, ' --score ',fullpath,' 1 2 3 sum --out ',outputpath,outname, ' --memory 1024'))
+  
+}
+}
+#######construct PTRS unsing elastic network models
+library(glmnet)
+library(glmnetUtils)
+library(tidyverse)
+library(skimr)
+library(recipes)
+library(caret)
+library(pROC)
+library(bigreadr)
+
+keepcsv1 <- fread2("/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/Artery_Aorta/fusion/IS_val_P01.csv")
+# ####IS
+cov <- fread2("/public/home/biostat01/project/cxh/PRS/02_pheno_data/EUR/06_val_IS_cov_mat.txt")
+# 
+# ###CES
+# cov <- fread2("/public/home/biostat01/project/cxh/PRS/02_pheno_data/EUR/06_val_CES_cov_mat.txt")
+# ##LAS
+# cov <- fread2("/public/home/biostat01/project/cxh/PRS/02_pheno_data/EUR/06_val_LAS_cov_mat.txt")
+# ###SVS
+# cov <- fread2("/public/home/biostat01/project/cxh/PRS/02_pheno_data/EUR/06_val_SVS_cov_mat.txt")
+
+cov=cov[,c(1,2,4,5,24:33)]
+
+
+keepcsv1=merge(cov,keepcsv1,by.x="eid",by.y="FID")
+for(i in c(2,4)){
+  keepcsv1[,i] <- factor(keepcsv1[,i])
+}
+
 ##
+trainx <- as.matrix(keepcsv1[,-c(1,2)])
+
+# alpha (0, 1)
+# lambda
+
+set.seed(20231231)
+cvelanet_cls <- cva.glmnet(
+  x = trainx,
+  y = keepcsv1$diag,
+  family = "binomial", 
+  alpha = seq(0, 1, len = 11)
+)
+
+
+cvelanet_cls
+
+tiff("/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/Artery_Aorta/fusion/IS/fig1_AA_IS_P01.tif",
+     height = 5,width = 5,units = "in",res = 600,compression = "lzw")
+plot(cvelanet_cls)
+dev.off()
+
+
+cva <- data.frame()
+for (i in seq_along(cvelanet_cls$alpha)) {
+  modi <- cvelanet_cls$modlist[[i]]
+  cvi <- data.frame(alpha = cvelanet_cls$alpha[i],
+                    lambda = modi$lambda,
+                    BinomialDeviance = modi$cvm)
+  cva <- rbind(cva, cvi)
+}
+head(cva)
+
+
+ggplot(cva, 
+       aes(x = log(lambda), 
+           y = BinomialDeviance, 
+           color = as.factor(alpha))) +
+  geom_line() +
+  labs(color = "alpha") +
+  theme_bw()
+ggsave("/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/Artery_Aorta/fusion/IS/fig2_AA_IS_P01.png")
+
+cva %>%
+  slice_min(BinomialDeviance, n=1) %>%
+  pull(alpha)
+bestalpha <- cva$alpha[which.min(cva$BinomialDeviance)]
+bestalphaat <- which(cvelanet_cls$alpha == bestalpha)
+bestenet_cls <- cvelanet_cls$modlist[[bestalphaat]]
+bestenet_cls
+tiff("/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/Artery_Aorta/fusion/IS/fig3_AA_IS_P01.tif",
+     height = 10,width = 10,units = "in",res = 600,compression = "lzw")
+plot(bestenet_cls)
+text(log(bestenet_cls$lambda.1se), 1.9, "lambda.1se")
+text(log(bestenet_cls$lambda.min), 1.9, "lambda.min")
+dev.off()
+
+bestenet_cls_coef <- coef(bestenet_cls, s = "lambda.min") %>%
+  as.matrix() %>%
+  as.data.frame() %>%
+  rownames_to_column("X")
+bestenet_cls_coef
+write_excel_csv(bestenet_cls_coef, 
+                "/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/Artery_Aorta/fusion/IS/系数1se_IS_AA_P01.csv")
+
+
+elanet_cls <- glmnet(
+  x = trainx,
+  y = keepcsv1$diag,
+  family = "binomial", 
+  alpha = bestalpha
+)
+
+
+elanet_cls
+
+tiff("/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/Artery_Aorta/fusion/IS/fig4_AA_IS_P01.tif",
+     height = 5,width = 10,units = "in",res = 600,compression = "lzw")
+plot(elanet_cls, xvar = "lambda", label = T)
+dev.off()
+
+###################
+
+
+trainpredprob <- predict(
+  bestenet_cls, 
+  newx = trainx, 
+  s = "lambda.min",
+  type = "response" 
+)
+
+trainroc <- roc(response = keepcsv1$diag, 
+                predictor = trainpredprob[, 1], 
+                levels = c("0", "1"),
+                direction = "<") 
+tiff("/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/Artery_Aorta/fusion/IS/fig5_AA_IS_P01.tif",
+     height = 5,width = 5,units = "in",res = 600,compression = "lzw")
+
+plot(trainroc, 
+     print.auc = TRUE, 
+     print.thres = T,
+     legacy.axes = T,
+     main = "ROC on Traindata")
+dev.off()
+
+save.image(file="/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/Artery_Aorta/fusion/IS/AA_IS_P01.RData")
