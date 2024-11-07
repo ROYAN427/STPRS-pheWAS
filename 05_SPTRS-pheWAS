@@ -1,0 +1,36 @@
+####PHEWAS
+eid_target <- fread2("/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/eid_target.txt")[,1]
+all_pheno <- fread2("/public/home/biostat01/project/cxh/phewas/data/phenotypes.csv")
+pheno <- all_pheno[match(eid_target,all_pheno$eid),]
+write.table(pheno,file="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/phewas/phenotypes.csv",col.names=T,row.names=F,quote = T,sep=",", na="")
+all_confounder <- fread2("/public/home/biostat01/project/cxh/phewas/data/confounder.csv")
+confounder <- all_confounder[match(eid_target,all_confounder$eid),]
+fwrite2(confounder,file="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/phewas/confounder.csv",col.names=T,row.names=F,quote = F,sep=",", na="")
+
+####
+###IS
+Rscript /public/home/biostat01/project/cxh/phewas/PHESANT-master/WAS/phenomeScan.r \
+--phenofile="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/phewas/phenotypes.csv" \
+--traitofinterestfile="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PRS_PTRS/test/IS/sum_Brain_Cerebellar_Hemisphere_P01.csv" \
+--variablelistfile="/public/home/biostat01/project/cxh/phewas/PHESANT-master/variable-info/stroke/outcome-info1.tsv" \
+--datacodingfile="/public/home/biostat01/project/cxh/phewas/PHESANT-master/variable-info/data-coding-ordinal-info.txt" \
+--traitofinterest="STPRS" \
+--resDir="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/phewas/IS/" \
+--userId="eid" \
+--confounderfile="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/phewas/confounder.csv" \
+
+##combindresult
+Rscript /public/home/biostat01/project/cxh/phewas/PHESANT-master/resultsProcessing/mainCombineResults.r \
+--resDir="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/phewas/IS/" \
+--variablelistfile="/public/home/biostat01/project/cxh/phewas/PHESANT-master/variable-info/stroke/outcome-info1.tsv" \
+
+
+result_ukb_IS <- fread2("G:/F/OneDrive/PRS-PTRS-PHEWAS/result/phewas/IS/results-combined.txt")
+colnames(result_ukb_IS)[1] <- "phenotype"
+result_ukb_IS <- result_ukb_IS[-which(result_ukb_IS$description=="Reason lost to follow-up"),]
+result_ukb_IS <- result_ukb_IS[,-c(2,8,9,10)]
+colnames(result_ukb_IS)[6] <- "p"
+IS <- addPhecodeInfo_ukb(result_ukb_IS,map_code, groupnums =T, groupcolors = T)
+IS1 <- IS[,-c(16,18)]
+write.xlsx(IS1,file="F://OneDrive/PRS-PTRS-PHEWAS/result/phewas/IS/supplementtable.xlsx",asTable = T)
+
