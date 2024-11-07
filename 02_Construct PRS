@@ -93,3 +93,22 @@ sh ${DBSLMM} -D ${PACK_DIR} -p ${PLINK} -B ${BLOCK} -s ${summ}_chr -H ${herit} -
 
 done
 
+#####calculate PRS
+plink=/public/home/biostat01/biosoft/plink/plink
+idx=/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/eid_target.txt
+
+for p in IS CES LAS SVS 
+do
+for chr in `seq 1 22`;do
+bfile=/public/home/Datasets/ukb/geno/EUR/hm3_nosex/chr${chr}
+esteffdbslmmt=/public/home/biostat01/project/cxh/PRS/04_output/${p}/EUR/DBSLMM/AS_chr${chr}_best.dbslmm.txt
+preddbslmmt=/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result//${p}/test/val_hm3_chr${chr}
+
+${plink} --bfile ${bfile} --score ${esteffdbslmmt} 1 2 4 sum --keep ${idx} --out ${preddbslmmt}
+
+gzip -f ${preddbslmmt}.profile
+
+rm ${preddbslmmt}.log
+rm ${preddbslmmt}.nopred
+done
+done
