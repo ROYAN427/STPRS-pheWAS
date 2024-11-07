@@ -1,0 +1,95 @@
+####subsample
+##
+library(bigreadr)
+
+PRS_path <- "/public/home/biostat04/Project/04_scLiverproject/"
+load("/public/home/Datasets/ukb/pheno/sqc_EUR.RData")
+eid_all <- sqc_eth$eid
+###target and validation
+valid_num <- 31085
+set.seed(20230911)
+eid_valid <- sample(eid_all, valid_num)
+
+eid_target <- setdiff(eid_all, eid_valid)
+
+
+write.table(cbind(eid_target, eid_target), 
+            file = paste0(PRS_path, "ukb/01_eid_target.txt"),
+            sep = "\t", col.names = F, row.names = F, quote = F)
+write.table(cbind(eid_valid, eid_valid),, 
+            file = paste0(PRS_path, "ukb/02_eid_valid.txt"),
+            sep = "\t",col.names = F, row.names = F, quote = F)
+test=fread2("/public/home/biostat01/project/cxh/PRS/03_ukb_data/EUR/01_eid_target.txt")
+prs_pheno=fread2("/public/home/biostat01/project/cxh/PRS/02_pheno_data/EUR/01_pheno_mat.txt")
+eid_all <- test$V1
+valid_num <- 50000
+set.seed(20240506)
+eid_valid <- sample(eid_all, valid_num)
+length(eid_valid)
+prs_val=prs_pheno[match(eid_valid,prs_pheno),]
+eid_target <- setdiff(eid_all, eid_valid)
+IS=fread2("/public/home/biostat01/project/cxh/PTRS/data/EUR_test/IS/pheno_IS.csv")
+
+IS_val=IS[match(eid_valid,IS$eid),]
+IS_test=IS[match(eid_target,IS$eid),]
+write.table(IS_val,file="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/pheno_IS_val.csv",col.names=T,row.names=F,sep=",",quote=F)
+write.table(IS_test,file="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/pheno_IS_test.csv",col.names=T,row.names=F,sep=",",quote=F)
+
+CES=fread2("/public/home/biostat01/project/cxh/PTRS/data/EUR_test/CES/pheno_CES.csv")
+
+CES_val=CES[match(eid_valid,CES$eid),]
+CES_test=CES[match(eid_target,CES$eid),]
+write.table(CES_val,file="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/pheno_CES_val.csv",col.names=T,row.names=F,sep=",",quote=F)
+write.table(CES_test,file="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/pheno_CES_test.csv",col.names=T,row.names=F,sep=",",quote=F)
+
+LAS=fread2("/public/home/biostat01/project/cxh/PTRS/data/EUR_test/LAS/pheno_LAS.csv")
+
+LAS_val=LAS[match(eid_valid,LAS$eid),]
+LAS_test=LAS[match(eid_target,LAS$eid),]
+write.table(LAS_val,file="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/pheno_LAS_val.csv",col.names=T,row.names=F,sep=",",quote=F)
+write.table(LAS_test,file="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/pheno_LAS_test.csv",col.names=T,row.names=F,sep=",",quote=F)
+
+SVS=fread2("/public/home/biostat01/project/cxh/PTRS/data/EUR_test/SVS/pheno_SVS.csv")
+
+SVS_val=SVS[match(eid_valid,SVS$eid),]
+SVS_test=SVS[match(eid_target,SVS$eid),]
+write.table(SVS_val,file="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/pheno_SVS_val.csv",col.names=T,row.names=F,sep=",",quote=F)
+write.table(SVS_test,file="/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/pheno_SVS_test.csv",col.names=T,row.names=F,sep=",",quote=F)
+
+#######Construct PRS using DBSLMM
+for p in IS CES LAS SVS
+do
+PACK_DIR=/public/home/biostat01/biosoft/
+SPLITCHR=${PACK_DIR}DBSLMM/software/SPLITCHR.R
+PLINK=${PACK_DIR}plink/plink
+DBSLMM=${PACK_DIR}DBSLMM/DBSLMM_script.sh
+
+
+# Split into chromosome
+
+PRS_path=/public/home/biostat01/project/cxh/PRS/
+DATADIR=${PRS_path}01_base_data/clean/mat_GEMMA/
+summ=${DATADIR}/LAS
+Rscript ${SPLITCHR} --summary ${summ}.assoc.txt
+
+# Set parameters
+BLOCK=${PACK_DIR}DBSLMM/block_data/EUR/chr
+herit=/public/home/biostat01/project/cxh/TWAS/result/h2/LAS.log
+index=auc
+thread=5
+outpath=${PRS_path}04_output/4/EUR/DBSLMM/
+
+
+# DBSLMM automatic version (without covariates)
+type=t
+valg=${PRS_path}03_ukb_data/EUR/chr
+valp=${PRS_path}02_pheno_data/EUR/03_pheno_valid.txt
+cov=${PRS_path}02_pheno_data/EUR/04_cov_valid.txt
+
+model=DBSLMM
+sh ${DBSLMM} -D ${PACK_DIR} -p ${PLINK} -B ${BLOCK} -s ${summ}_chr -H ${herit} -m ${model} -G ${valg} -P ${valp} \
+            -l ${p} -T ${type}  -i ${index} -t ${thread} -o ${outpath} -c ${cov}
+
+
+done
+
