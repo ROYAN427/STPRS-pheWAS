@@ -132,7 +132,7 @@ bestenet_cls_coef <- coef(bestenet_cls, s = "lambda.min") %>%
   rownames_to_column("X")
 bestenet_cls_coef
 write_excel_csv(bestenet_cls_coef, 
-                "/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/Artery_Aorta/fusion/IS/系数1se_IS_AA_P01.csv")
+                "/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/Artery_Aorta/fusion/IS/coef1se_IS_AA_P01.csv")
 
 
 elanet_cls <- glmnet(
@@ -175,3 +175,15 @@ plot(trainroc,
 dev.off()
 
 save.image(file="/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/Artery_Aorta/fusion/IS/AA_IS_P01.RData")
+
+#######calculate PTRS
+rm(list=ls())
+gc()
+expre <- fread2("/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PTRS/Whole_Blood/test/IS_all.csv")
+coef <- fread2("/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/Whole_Blood/fusion/IS/coef1se_IS_all.csv")[-1,]
+common_cols <- intersect(coef[,1], names(expre))
+expre1 <- expre[,common_cols]
+PTRS <- as.matrix(expre1) %*% as.matrix(coef[,2])
+final_PTRS <- cbind(expre[,1],PTRS)
+colnames(final_PTRS) <- c("eid","PTRS")
+fwrite2(final_PTRS,file = "/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PTRS/Whole_Blood/test_IS_all.csv",col.names=T,row.names=F,quote=F,sep=",")
