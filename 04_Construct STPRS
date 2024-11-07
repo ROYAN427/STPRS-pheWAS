@@ -1,0 +1,134 @@
+###########cbind PRS_PTRS
+rm(list=ls())
+gc()
+
+PRS <- fread2("/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/5/val/val_hm3_allchr.profile")
+tissues <- c("Artery_Aorta","Artery_Coronary","Brain_Cerebellar_Hemisphere",  "Brain_Frontal_Cortex_BA9",
+             "Brain_Anterior_cingulate_cortex_BA24","Brain_Cerebellum", "Brain_Cortex", "Whole_Blood")
+
+PTRS_path <- "/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PTRS/"
+for(dis in c("IS","CES","LAS","SVS")){
+for (tissue in tissues) {
+  for (P in c("P01","P05","all")) {
+    PTRS <- fread2(paste0(PTRS_path,tissue,"/val_",dis,"_",P,".csv"))
+    merged <- merge(PRS,PTRS,by.x="FID",by.y="eid")
+    fwrite2(merged,file=paste0("/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PRS_PTRS/",dis,"/",tissue,"_",P,".csv"), col.names = T, row.names = F, quote = F,sep=",")
+  }
+}
+}
+rm(list=ls())
+gc()
+
+PRS <- fread2("/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/5/test/val_hm3_allchr.profile")
+eid_target <- fread2("/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/eid_target.txt")[,1]
+tissues <- c("Artery_Aorta","Artery_Coronary","Brain_Cerebellar_Hemisphere",  "Brain_Frontal_Cortex_BA9",
+             "Brain_Anterior_cingulate_cortex_BA24","Brain_Cerebellum", "Brain_Cortex", "Whole_Blood")
+
+PTRS_path <- "/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PTRS/"
+for(dis in c("IS","CES","LAS","SVS")){
+for (tissue in tissues) {
+  for (P in c("P01","P05","all")) {
+    PTRS <- fread2(paste0(PTRS_path,tissue,"/test_",dis,"_",P,".csv"))
+    merged <- merge(PRS,PTRS,by.x="FID",by.y="eid")
+    merged <- merged[match(eid_target,merged$FID),]
+    fwrite2(merged,file=paste0("/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PRS_PTRS/test/",dis,"/",tissue,"_",P,".csv"), col.names = T, row.names = F, quote = F,sep=",")
+  }
+}
+}
+#####COR PRS&PTRS
+for (dis in c("IS","CES","LAS","SVS")) {
+  for (tissue in c("Artery_Aorta","Artery_Coronary","Brain_Cerebellar_Hemisphere",  "Brain_Frontal_Cortex_BA9",
+                   "Brain_Anterior_cingulate_cortex_BA24","Brain_Cerebellum", "Brain_Cortex", "Whole_Blood")) {
+    for (P in c("P01","P05","all")) {
+      data <- fread2(paste0("/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PRS_PTRS/",dis,"/",tissue,"_",P,".csv"))
+      correlation <- cor(data$PRS, data$PTRS)
+      # print(paste("Correlation between PRS and ",tissue,"_",P,",PTRS of ,",dis ,":",correlation))
+      cor_test <- cor.test(data$PRS, data$PTRS)
+      print(paste("Correlation between PRS and ",tissue,"_",P,",PTRS of ,",dis ,":",cor_test$p.value))
+    }
+  }
+}
+####mrege_diag
+rm(list=ls())
+gc()
+
+SVS <- fread2("/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/pheno_SVS_val.csv")[,c(1,2)]
+tissues <- c("Artery_Aorta","Artery_Coronary","Brain_Cerebellar_Hemisphere",  "Brain_Frontal_Cortex_BA9",
+             "Brain_Anterior_cingulate_cortex_BA24","Brain_Cerebellum", "Brain_Cortex", "Whole_Blood")
+path <- "/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PRS_PTRS/"
+for(dis in c("IS","CES","LAS","SVS")){
+for (tissue in tissues) {
+  for (P in c("P01","P05","all")) {
+    PTRS <- fread2(paste0(path,dis,"/"tissue,"_",P,".csv"))
+    merged <- merge(SVS,PTRS,by.x="eid",by.y="FID")
+    merged <- merged[match(SVS$eid,merged$eid),]
+    colnames(merged) <- c("eid","diag","PRS","PTRS")
+    fwrite2(merged,file=paste0("/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PRS_PTRS/",dis,"/",tissue,"_",P,"1.csv"), col.names = T, row.names = F, quote = F,sep=",")
+  }
+}
+}
+######train PRS+PTRS BETA
+rm(list=ls())
+gc()
+
+tissues <- c("Artery_Aorta","Artery_Coronary","Brain_Cerebellar_Hemisphere",  "Brain_Frontal_Cortex_BA9",
+             "Brain_Anterior_cingulate_cortex_BA24","Brain_Cerebellum", "Brain_Cortex", "Whole_Blood")
+path <- "/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PRS_PTRS/"
+for(dis in c("IS","CES","LAS","SVS")){
+for (tissue in tissues) {
+  for (P in c("P01","P05","all")) {
+    toglm <- fread2(paste0(path,dis,""/,tissue,"_",P,"1.csv"))
+    glm_res <- glm(diag ~ PRS+PTRS,family = binomial, data = toglm)
+    beta <- as.data.frame(coef(glm_res))
+    fwrite2(beta,file = paste0(path,"coef/",tissue,"_",P,".csv"), col.names = T, row.names = F, quote = F,sep=",")
+    
+  }
+  
+}
+}
+
+#####test PRS+PTRS
+rm(list=ls())
+gc()
+
+PTRS_PRS_datapath <- "/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PRS_PTRS/test/"
+coef_path <- "/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PRS_PTRS/"
+tissues <- c("Artery_Aorta","Artery_Coronary","Brain_Cerebellar_Hemisphere",  "Brain_Frontal_Cortex_BA9",
+             "Brain_Anterior_cingulate_cortex_BA24","Brain_Cerebellum", "Brain_Cortex", "Whole_Blood")
+for (dis in c("IS","CES","LAS","SVS")) {
+  for (tissue in tissues) {
+    for (P in c("P01","P05","all")) {
+      coef <- fread2(paste0(coef_path,dis,"/coef/",tissue,"_",P,".csv"))
+      PTRS_PRS <- fread2(paste0(PTRS_PRS_datapath,dis,"/",tissue,"_",P,".csv"))
+      score_sum <- as.matrix(PTRS_PRS[,-1]) %*% as.matrix(coef[-1,])
+      score_sum <- cbind(PTRS_PRS[,1],score_sum)
+      colnames(score_sum) <- c("eid","STPRS")
+      fwrite2(score_sum,file=paste0(PTRS_PRS_datapath,dis,"/sum_",tissue,"_",P,".csv"))
+      
+    }
+    
+  }
+  
+}
+#####test PRS+PTRS
+rm(list=ls())
+gc()
+
+library(pROC)
+PTRS_PRS_datapath <- "/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PRS_PTRS/test/"
+cov_path <- "/public/home/biostat01/project/cxh/PRS_PTRS_PHE/data/"
+tissues <- c("Artery_Aorta","Artery_Coronary","Brain_Cerebellar_Hemisphere",  "Brain_Frontal_Cortex_BA9",
+             "Brain_Anterior_cingulate_cortex_BA24","Brain_Cerebellum", "Brain_Cortex", "Whole_Blood")
+for (dis in c("IS","CES","LAS","SVS")) {
+  pheno <- fread2(paste0(cov_path,"pheno_",dis,"_test.csv"))[,c(1,2)]
+  for (tissue in tissues) {
+    for (P in c("P01","P05","all")) {
+      STPRS <- fread2(paste0(PTRS_PRS_datapath,dis,"/sum_",tissue,"_",P,".csv"))
+      merged_diag <- merge(pheno,STPRS,by="eid")
+      colnames(merged_diag) <- c("eid","diag","STPRS")
+      ROC <- roc(response = merged_diag$diag, predictor = merged_diag$STPRS, levels = c(0, 1), direction = "<")
+      print(paste0(dis," ",tissue, " ",P, " AUC =",ROC$auc))
+    }
+  }
+
+}
