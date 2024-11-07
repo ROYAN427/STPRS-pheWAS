@@ -1,0 +1,353 @@
+#genome-wide summary statistics in LD-score format
+conda activate ldsc
+##IS
+./munge_sumstats.py \--sumstats GCST90104539_buildGRCh37.tsv.gz \--N 1296908 \--out IS \--merge-alleles w_hm3.snplist
+
+./munge_sumstats.py \--sumstats GCST90104540_buildGRCh37.tsv.gz \--N 1245612 \--out CES \--merge-alleles w_hm3.snplist
+./munge_sumstats.py \--sumstats GCST90104541_buildGRCh37.tsv.gz \--N 1241207 \--out LAS \--merge-alleles w_hm3.snplist
+
+./munge_sumstats.py \--sumstats GCST90104542_buildGRCh37.tsv.gz \--N 1241619 \--out SVS \--merge-alleles w_hm3.snplist
+
+conda deactivate
+
+####Run TWAS
+PROJ_PATH=/public/home/biostat03/project/cxh/
+FUSION=/public/home/biostat03/biosoft/fusion_twas-master/
+SUMM=${PROJ_PATH}/data/summary_stat/metastroke_sumstats/
+OUT=${PROJ_PATH}/result/metastroke/TWAS/
+
+for  dis in IS LAS CES SVS
+do 
+
+for tissue in Artery_Aorta Artery_Coronary Brain_Anterior_cingulate_cortex_BA24 Brain_Cerebellar_Hemisphere Brain_Cerebellum Brain_Cortex Brain_Frontal_Cortex_BA9 Whole_Blood 
+do
+
+for chr in `seq 1 22`
+do
+
+Rscript ${FUSION}FUSION.assoc_test.R \
+--sumstats ${SUMM}${dis}.sumstats.gz \
+--weights ${FUSION}WEIGHTS/GTExv8.EUR.${tissue}.pos \
+--weights_dir ${FUSION}WEIGHTS/ \
+--ref_ld_chr ${FUSION}LDREF/1000G.EUR. \
+--chr ${chr} \
+--out ${OUT}/${dis}_${tissue}_${chr}.txt
+
+done
+
+done
+
+done
+
+######Clean TWAS result in R
+rm(list=ls())
+gc()
+# load packages
+library(data.table)
+library(dplyr)
+library(purrr)
+
+# Parameters
+PROJ_PATH <- "/public/home/biostat03/project/cxh/"
+DATA_PATH <- paste0(PROJ_PATH, "result/TWAS/")
+DATA_INPUT <- paste0(PROJ_PATH, "result/TWAS/clean/")
+WORK_PATH <- paste0(DATA_INPUT, "merge/")
+SIGNIF_PATH <- paste0(DATA_INPUT, "FDRsignif/")
+INTERSEC_PATH <- paste0(DATA_INPUT, "intersection/")
+
+load(paste0(PROJ_PATH, "reference/Gencode_hg19.RData"))
+region <- fread(paste0(PROJ_PATH, "reference/LAVA_s2500_m25_f1_w200.blocks.txt"))
+
+gencode$LOC <- NA
+for(i in 1:nrow(gencode)){
+  
+  LOC_in <- region$LOC[which(region$CHR == gencode$CHR[i] &
+                         region$START < gencode$start[i] &
+                         region$STOP > gencode$end[i])]
+  LOC_between <- paste0(max(region$LOC[which(region$CHR == gencode$CHR[i] &
+                                       region$START < gencode$start[i])]), "_",
+                        min(region$LOC[which(region$CHR == gencode$CHR[i] &
+                                       region$STOP > gencode$end[i])]))
+  LOC <- ifelse(length(LOC_in) == 0,
+                LOC_between,
+                LOC_in)
+  gencode$LOC[i] <- LOC
+  
+   if(i %% 1000 == 0){
+     print(i)
+   }
+}
+write.table(gencode, row.names = F, quote = F, sep = "\t",
+            file = paste0(INTERSEC_PATH, "gencode.txt"))
+
+gencode <- fread(paste0(INTERSEC_PATH, "gencode.txt"))
+gencode <- gencode[, c(8:9, 11)]
+names(gencode)[2] <- "ID"
+
+for(stroke in c( "CES","IS","LAS","SVS")){
+  
+  for(tissue in c("Artery_Aorta", "Artery_Coronary","Brain_Anterior_cingulate_cortex_BA24","Brain_Cerebellar_Hemisphere","Brain_Cerebellum",
+                  "Brain_Cortex","Brain_Frontal_Cortex_BA9", "Whole_Blood")){
+    
+    data_merge <- data.frame()
+    for(chr in 1:22){
+      
+      fusion_output <- fread(paste0(DATA_PATH, stroke, "_", tissue, "_", chr, ".txt"))
+      if(chr == 6){
+        
+        fusion_mhc <- fread(paste0(DATA_PATH, stroke, "_", tissue, "_", chr, ".txt.MHC"))
+        fusion_output <- rbind(fusion_output, fusion_mhc)
+      }
+      data_merge <- rbind(data_merge, fusion_output) 
+      data_merge$ID <- substr(data_merge$ID, 1, 15)
+      
+    }
+    data_merge <- merge(gencode, data_merge, by = "ID", all.y = T)
+    write.table(data_merge, row.names = F, quote = F, sep = "\t",
+                file = paste0(WORK_PATH, stroke, "_", tissue, ".txt"))
+    
+  }
+}
+
+
+
+# TWAS Significant results
+results <- dir(WORK_PATH)
+for(file in results){
+  
+  data_signif <- fread(paste0(WORK_PATH, file))
+
+  data_signif <- data_signif[which(data_signif$TWAS.P < 0.05/nrow(data_signif)),]
+  write.table(data_signif, row.names = F, quote = F, sep = "\t",
+              file = paste0(SIGNIF_PATH, file))
+}
+
+
+
+######colocalization
+rm(list=ls())
+gc()
+# load packages
+library(coloc)
+library(dplyr)
+library(data.table)
+library(tidyverse)
+
+# Parameters
+PROJ_PATH <- "/public/home/biostat03/project/cxh/"
+EQTL_DATA <- "/public/home/Datasets/dbGaP/GTEx/V7_summary/GTEx_Analysis_v8_eQTL_sig/"
+RAW_SUMM <- paste0(PROJ_PATH, "data/summary_stat/sumstats/cleaned/")
+SUMM_DATA <- paste0(PROJ_PATH, "data/colocalization/COLOC/")
+EQTL_PATH <- paste0(SUMM_DATA, "GTEx_v8_cleaned/")
+WORK_PATH <- paste0(PROJ_PATH, "result/colocalization/coloc/")
+GENE_PATH <- paste0(PROJ_PATH, "data/colocalization/COLOC_v8/")
+SUSIE_PATH <- paste0(PROJ_PATH, "result/colocalization/coloc_susie/")
+LD_REF <- "/public/home/Datasets/1000GP/EUR/all/merge"
+PLINK <- "/public/home/biostat03/biosoft/plink1.9"
+KGP_PATH <- "/public/home/biostat03/gwas_ref_data/eur_1kgp_all/"
+
+# load reference
+kgp_snplist <- fread(paste0(KGP_PATH, "snplist.snplist"), header = F)
+colnames(kgp_snplist) <- "rs_id"
+
+# Munge 1KGP function
+munge.kgp <- function(data_ldsc, snplist, type){
+  
+  data_ldsc_ref <- left_join(snplist, data_ldsc, by = c("rs_id"))
+  ## delete allele
+  na_row1 <- which(data_ldsc_ref$A1.x != data_ldsc_ref$A2.y & data_ldsc_ref$A1.x != data_ldsc_ref$A1.y)
+  na_row2 <- which(data_ldsc_ref$A2.x != data_ldsc_ref$A2.y & data_ldsc_ref$A2.x != data_ldsc_ref$A1.y)
+  na_row <- c(na_row1, na_row2) %>% unique()
+  if(type == "cc"){
+    
+    if(length(na_row) != 0){
+      
+      data_ldsc_ref$beta[na_row] <- NA
+    }
+    ## flip allele
+    fl_row <- which(data_ldsc_ref$A1.x == data_ldsc_ref$A2.y & data_ldsc_ref$A2.x == data_ldsc_ref$A1.y)
+    if(length(fl_row) != 0){
+      
+      data_ldsc_ref$beta[fl_row] <- -1 * data_ldsc_ref$beta[fl_row]
+    }
+    data_ldsc_ref_f <- data.frame(rs_id = data_ldsc_ref$rs_id,
+                                  beta = data_ldsc_ref$beta,
+                                  varbeta = data_ldsc_ref$varbeta,
+                                  pval_nominal = data_ldsc_ref$pval,
+                                  A1 = data_ldsc_ref$A1.x,
+                                  A2 = data_ldsc_ref$A2.x,
+                                  CHR = data_ldsc_ref$gwas_chr)
+  }
+  if(type == "quant"){
+    
+    if(length(na_row) != 0){
+      
+      data_ldsc_ref$slope[na_row] <- NA
+    }
+    ## flip allele
+    fl_row <- which(data_ldsc_ref$A1.x == data_ldsc_ref$A2.y & data_ldsc_ref$A2.x == data_ldsc_ref$A1.y)
+    if(length(fl_row) != 0){
+      
+      data_ldsc_ref$slope[fl_row] <- -1 * data_ldsc_ref$slope[fl_row]
+    }
+    data_ldsc_ref_f <- data.frame(rs_id = data_ldsc_ref$rs_id,
+                                  MAF = data_ldsc_ref$maf,
+                                  ma_count = data_ldsc_ref$ma_count,
+                                  pval_nominal = data_ldsc_ref$pval_nominal,
+                                  beta = data_ldsc_ref$slope,
+                                  varbeta = (data_ldsc_ref$slope_se)^2,
+                                  A1 = data_ldsc_ref$A1.x,
+                                  A2 = data_ldsc_ref$A2.x,
+                                  CHR = data_ldsc_ref$CHR.x)
+  }
+  
+  return(data_ldsc_ref_f)
+}
+
+## Summary data preparation
+ref_b37 <- fread(paste0(PROJ_PATH, "reference/SNP_BP_GRCh37.txt"))
+ref_b37 <- ref_b37[,c(3,1,2)]
+colnames(ref_b37) <- c("SNP", "CHR", "BP")
+for (i in c("CES","IS","LAS","SVS")) {
+  
+
+GWAS_summ <- fread(paste0(RAW_SUMM, i,".txt"))
+GWAS_summ <- GWAS_summ[!duplicated(GWAS_summ$SNP),]
+GWAS_summ <- left_join(GWAS_summ, ref_b37, by = "SNP")
+GWAS_summ <- data.frame(rs_id = GWAS_summ$SNP,
+                       gwas_chr = GWAS_summ$CHR,
+                       gwas_bp =GWAS_summ$BP,
+                       A1 = GWAS_summ$A1,
+                       A2 = GWAS_summ$A2,
+                       pval_nominal = GWAS_summ$P,
+                       beta = GWAS_summ$Beta,
+                       varbeta = (GWAS_summ$SE)^2)
+write.table(GWAS_summ, row.names = F, quote = F, sep = "\t",
+             file = paste0(SUMM_DATA,i, ".txt"))
+}
+
+# # eQTL data preparation
+ref_b38 <- fread(paste0(PROJ_PATH, "reference/SNP_BP_GRCh38.txt"))
+colnames(ref_b38) <- c("rs_id", "CHR", "BP")
+load(paste0(PROJ_PATH, "reference/Gencode_hg19.RData"))
+tissue <- c("Artery_Aorta", "Artery_Coronary","Brain_Anterior_cingulate_cortex_BA24",
+            "Brain_Cerebellar_Hemisphere","Brain_Cerebellum","Brain_Cortex",
+            "Brain_Frontal_Cortex_BA9","Whole_Blood")
+for(i in tissue){
+
+eqtl <- fread(paste0(EQTL_DATA, i, ".v8.signif_variant_gene_pairs.txt.gz"))
+eqtl <- separate(eqtl, col = "variant_id", into = c("CHR", "BP", "A1", "A2", "Build"), sep = "_", extra = "merge")
+eqtl$CHR <- gsub("chr", "", eqtl$CHR) %>% as.numeric
+eqtl$BP <- as.numeric(eqtl$BP)
+eqtl <- inner_join(eqtl, ref_b38, by = c("CHR", "BP"))
+write.table(eqtl, row.names = F, quote = F, sep = "\t",
+               file = paste0(EQTL_PATH, i, ".txt"))
+   print(i)
+ }
+
+## TWAS significant Genes
+tissue <- c("Artery_Aorta", "Artery_Coronary","Brain_Anterior_cingulate_cortex_BA24","Brain_Cerebellar_Hemisphere",
+            "Brain_Cerebellum","Brain_Cortex","Brain_Frontal_Cortex_BA9","Whole_Blood")
+tissue_n <- c(329,175,135,157,
+              188,183,157,558)
+stroke <- c("IS","CES","LAS","SVS")
+stroke_n <- c(1296908,1245612,1241207,1241619)
+case_n <- c(62100 , 10804, 6399, 6811)
+
+load(paste0(PROJ_PATH, "reference/Gencode_hg19.RData"))
+gene_pos <- gencode[,c(8,10,3,4)]
+gene_pos <- gene_pos[!duplicated(gene_pos$genesymbol),]
+gencode <- gencode[,8:9]
+colnames(gencode) <- c("gene_symbol", "gene_id")
+
+
+full_result <- data.frame()
+full_snp_result <- data.frame()
+
+for(s in stroke){  
+  TWAS <- fread(paste0(GENE_PATH, "Gene_", s, ".txt"))
+  Gene <- unique(TWAS$gene_symbol)
+  kgp_snplist <- fread(paste0(KGP_PATH, "kgp.frq"))
+  colnames(kgp_snplist)[2] <- "rs_id"
+  for(i in tissue){
+
+    eqtl <- fread(paste0(EQTL_PATH, i, ".txt"))
+    eqtl$gene_id <- substr(eqtl$gene_id, 1, 15)
+    eqtl <- right_join(gencode, eqtl, by = "gene_id")
+    
+    gwas <- fread(paste0(SUMM_DATA, s, ".txt"))
+    gwas <- gwas[!is.na(gwas$gwas_chr),]
+    
+    coloc_result <- data.frame()
+    coloc_snp_result <- data.frame()
+    for(target_gene in Gene){
+      
+      win_size <- 1500000
+      eqtl_mat <- eqtl[which(eqtl$gene_symbol == target_gene),]
+      gwas_mat <- gwas[which(gwas$gwas_chr == gene_pos$CHR[gene_pos$genesymbol == target_gene] &
+                               gwas$gwas_bp > (gene_pos$start[gene_pos$genesymbol == target_gene] - win_size) &
+                               gwas$gwas_bp < (gene_pos$start[gene_pos$genesymbol == target_gene] + win_size)),]
+      
+      snp_intersec <- intersect(eqtl_mat$rs_id, gwas_mat$rs_id) %>% intersect(kgp_snplist$rs_id)
+      
+      if(length(snp_intersec) > 10){
+        
+        intersec_snplist <- kgp_snplist %>% filter(rs_id %in% snp_intersec)
+        
+        gwas_mat <- gwas_mat[!duplicated(gwas_mat$rs_id),]
+        gwas_mat <- munge.kgp(gwas_mat, intersec_snplist, type = "cc")
+        
+        eqtl_mat <- eqtl_mat[!duplicated(eqtl_mat$rs_id),]
+        eqtl_mat <- munge.kgp(eqtl_mat, intersec_snplist, type = "quant")
+        
+        gwas_na <- gwas_mat$rs_id[is.na(gwas_mat$beta)]
+        eqtl_na <- eqtl_mat$rs_id[is.na(eqtl_mat$beta)]
+        na_snp <- union(gwas_na, eqtl_na)
+        
+        if(length(na_snp) > 0){
+          
+          gwas_mat <- gwas_mat[-which(gwas_mat$rs_id %in% na_snp),]
+          eqtl_mat <- eqtl_mat[-which(eqtl_mat$rs_id %in% na_snp),]
+        }
+        
+        dataset1 = list(snp = gwas_mat$rs_id,
+                        beta = gwas_mat$beta,
+                        varbeta = gwas_mat$varbeta,
+                        pvalues = gwas_mat$pval_nominal, 
+                        type = "cc", 
+                        N = stroke_n[which(s == stroke)],
+                        s = (case_n[which(s == stroke)]/stroke_n[which(s == stroke)]))
+        dataset2 = list(snp = eqtl_mat$rs_id,
+                        pvalues = eqtl_mat$pval_nominal, 
+                        varbeta = eqtl_mat$varbeta,
+                        beta = eqtl_mat$beta,
+                        type = "quant",
+                        N = tissue_n[which(i == tissue)],
+                        MAF = eqtl_mat$MAF)
+        write.table(dataset1,file = paste0("/public/home/biostat01/project/cxh/TWAS/coloctest/",s,"/locus/gwas_",tissue,"_",Gene,".txt"), row.names = F, quote = F, sep = "\t",) 
+        write.table(dataset2,file = paste0("/public/home/biostat01/project/cxh/TWAS/coloctest/",s,"/locus/eqtl_",tissue,"_",Gene,".txt"), row.names = F, quote = F, sep = "\t",) 
+
+        result <- coloc.abf(dataset1, dataset2,
+                            p1 = 1e-04, p2 = 1e-04, p12 = 1e-05)
+        summ_result <- result$summary %>% data.frame %>% t
+        summ_result <- cbind(summ_result,  disease = s,
+                        tissue = i,
+                        Gene = target_gene)
+        coloc_result <- rbind(coloc_result, summ_result)
+        need_result <- result$results 
+        if(nrow(need_result)>0){need_result <- cbind(need_result,  disease = s,
+                                                     tissue = i,
+                                                     Gene = target_gene)}
+        
+        snp_coloc_result <- rbind(coloc_snp_result, need_result) 
+      }
+    }
+    write.table(coloc_result, row.names = F, quote = F, sep = "\t",
+                file = paste0(WORK_PATH, "1.5Mb/summary/", s, "_", i,  "_coloc_result.txt"))
+    full_result <- rbind(full_result, coloc_result)
+    write.table(snp_coloc_result, row.names = F, quote = F, sep = "\t",
+                file = paste0(WORK_PATH, "1.5Mb/snp/", s, "_", i,  "_coloc_result.txt"))
+    full_snp_result <- rbind(full_snp_result,snp_coloc_result)
+    print(i)
+}
+}
