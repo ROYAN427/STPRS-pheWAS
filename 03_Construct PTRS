@@ -20,7 +20,7 @@ for(i in tissue){
     write.table(esteff, file = paste0(OUTPUT_PATH,i,"/", ensg_prefix,".txt"),col.names = F,row.names = F, sep = "\t", quote = F)
   }  
 }
-##calculat gene expression
+#######calculat gene expression
 plink <- "/public/home/biostat01/biosoft/plink/plink"
 inputpath <- "/public/home/biostat01/project/cxh/PTRS/WEIGHT/"
 bfile <- "/public/home/biostat01/project/cxh/PRS/03_ukb_data/EUR/merge"
@@ -35,7 +35,12 @@ for (g in gene) {
   
 }
 }
+
+
+
+############################################
 #######construct PTRS unsing elastic network models
+###
 library(glmnet)
 library(glmnetUtils)
 library(tidyverse)
