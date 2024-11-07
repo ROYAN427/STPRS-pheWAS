@@ -1,0 +1,23 @@
+######calculat gene expression
+##WEIGHT_process
+WEIGHT_PATH <- "/public/home/biostat01/biosoft/fusion_twas-master/WEIGHTS/V8/"
+OUTPUT_PATH <- "/public/home/biostat01/project/cxh/PTRS/WEIGHT/"
+tissue <- c("Artery_Aorta", "Artery_Coronary","Brain_Anterior_cingulate_cortex_BA24","Brain_Cerebellar_Hemisphere",
+            "Brain_Cerebellum","Brain_Cortex","Brain_Frontal_Cortex_BA9","Whole_Blood")
+for(i in tissue){
+  gene_files <- list.files(path = paste0(WEIGHT_PATH,"GTExv8.EUR.", i), pattern = "ENSG\\d+\\.\\d+\\.wgt.RDat")
+  
+  for (file in gene_files) {
+    ensg_prefix <- gsub("^(ENSG\\d+).*", "\\1", file)
+
+    load(file.path(paste0(WEIGHT_PATH,"GTExv8.EUR.", i), file))
+    
+    wgt.matrix1 <- as.data.frame(wgt.matrix)
+    wgt.matrix1$rsid <- rownames(wgt.matrix1)
+    all <- merge(snps, wgt.matrix1,by.x = "V2", by.y = "rsid")
+    esteff <- all[,c(1,5,9)]
+
+    write.table(esteff, file = paste0(OUTPUT_PATH,i,"/", ensg_prefix,".txt"),col.names = F,row.names = F, sep = "\t", quote = F)
+  }  
+}
+##
