@@ -179,11 +179,17 @@ save.image(file="/public/home/biostat01/project/cxh/PTRS/expression/validation/m
 #######calculate PTRS
 rm(list=ls())
 gc()
-expre <- fread2("/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PTRS/Whole_Blood/test/IS_all.csv")
-coef <- fread2("/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/Whole_Blood/fusion/IS/coef1se_IS_all.csv")[-1,]
+for(dis in c("IS","CES","LAS","SVS"){
+for(i in tissue){
+for(P in c("all","P05","P01")){
+expre <- fread2(paste0("/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PTRS/",i,"/test/",dis,"_",P,".csv"))
+coef <- fread2(paste0("/public/home/biostat01/project/cxh/PTRS/expression/validation/merge/",o,"/fusion/",dis,"/coef1se_",dis,"_",P,".csv"))[-1,]
 common_cols <- intersect(coef[,1], names(expre))
 expre1 <- expre[,common_cols]
 PTRS <- as.matrix(expre1) %*% as.matrix(coef[,2])
 final_PTRS <- cbind(expre[,1],PTRS)
 colnames(final_PTRS) <- c("eid","PTRS")
-fwrite2(final_PTRS,file = "/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PTRS/Whole_Blood/test_IS_all.csv",col.names=T,row.names=F,quote=F,sep=",")
+fwrite2(final_PTRS,file = paste0("/public/home/biostat01/project/cxh/PRS_PTRS_PHE/result/PTRS/",i,"/test_",dis,"_",P,".csv",col.names=T,row.names=F,quote=F,sep=",")
+}
+}
+}
